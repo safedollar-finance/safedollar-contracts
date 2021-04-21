@@ -15,6 +15,25 @@
         "type": "uint256"
       }
     ],
+    "name": "BVaultsFundFunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "seigniorage",
+        "type": "uint256"
+      }
+    ],
     "name": "BoardroomFunded",
     "type": "event"
   },
@@ -66,6 +85,25 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "dollarAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ExternalRewardAdded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "address",
         "name": "executor",
@@ -79,6 +117,25 @@
       }
     ],
     "name": "Initialized",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "seigniorage",
+        "type": "uint256"
+      }
+    ],
+    "name": "MarketingFundFunded",
     "type": "event"
   },
   {
@@ -161,6 +218,32 @@
   {
     "inputs": [],
     "name": "allocateSeigniorageSalary",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "bVaultsFund",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "bVaultsFundSharedPercent",
     "outputs": [
       {
         "internalType": "uint256",
@@ -440,6 +523,45 @@
   },
   {
     "inputs": [],
+    "name": "externalRewardAmount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "externalRewardSharedPercent",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getBoardroomContractionReward",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "getBondDiscountRate",
     "outputs": [
       {
@@ -621,6 +743,32 @@
   },
   {
     "inputs": [],
+    "name": "marketingFund",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "marketingFundSharedPercent",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "maxDeptRatioPercent",
     "outputs": [
       {
@@ -747,6 +895,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "notifyExternalReward",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -892,32 +1053,6 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "_daoFund",
-        "type": "address"
-      }
-    ],
-    "name": "setDaoFund",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_daoFundSharedPercent",
-        "type": "uint256"
-      }
-    ],
-    "name": "setDaoFundSharedPercent",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "_discountPercent",
         "type": "uint256"
@@ -950,6 +1085,57 @@
       }
     ],
     "name": "setDollarPriceCeiling",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_externalRewardSharedPercent",
+        "type": "uint256"
+      }
+    ],
+    "name": "setExternalRewardSharedPercent",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_daoFund",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_daoFundSharedPercent",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_bVaultsFund",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_bVaultsFundSharedPercent",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "_marketingFund",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_marketingFundSharedPercent",
+        "type": "uint256"
+      }
+    ],
+    "name": "setExtraFunds",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 import "../interfaces/IUniswapV2Router.sol";
+import "../interfaces/IValueLiquidRouter.sol";
 import "../interfaces/IBPool.sol";
 import "../interfaces/IBoardroom.sol";
 import "../interfaces/IShare.sol";
@@ -72,6 +73,13 @@ contract CommunityFund {
     uint256 public kebabFarmingPoolId = 2;
     address public kebabFarmingPoolLpPairAddress = address(0x1B96B92314C44b159149f7E0303511fB2Fc4774f); // BUSD/WBNB
     address public kebab = address(0x7979F6C54ebA05E18Ded44C4F986F49a5De551c2); // KEBAB (kebabPool farming token)
+
+    IValueLiquidRouter public vswapRouter = IValueLiquidRouter(0xb7e19a1188776f32E8C2B790D9ca578F2896Da7C); // vSwapRouter
+    address public vswapFarmingPool = address(0xd56339F80586c08B7a4E3a68678d16D37237Bd96);
+    uint256 public vswapFarmingPoolId = 1;
+    address public vswapFarmingPoolLpPairAddress = address(0x522361C3aa0d81D1726Fa7d40aA14505d0e097C9); // BUSD/WBNB
+    address public vbswap = address(0x4f0ed527e8A95ecAA132Af214dFd41F30b361600); // vBSWAP (vSwap farming token)
+    address public vbswapToWbnbPair = address(0x8DD39f0a49160cDa5ef1E2a2fA7396EEc7DA8267); // vBSWAP/WBNB 50-50
 
     /* ========== EVENTS ========== */
 
@@ -155,18 +163,13 @@ contract CommunityFund {
         lpPairAddress[_tokenB] = _lpAdd;
     }
 
-    function setPancakeFarmingPool(address _pancakeFarmingPool, uint256 _pancakeFarmingPoolId, address _pancakeFarmingPoolLpPairAddress, address _cake) external onlyOperator {
-        pancakeFarmingPool = _pancakeFarmingPool;
-        pancakeFarmingPoolId = _pancakeFarmingPoolId;
-        pancakeFarmingPoolLpPairAddress = _pancakeFarmingPoolLpPairAddress;
-        cake = _cake;
-    }
-
-    function setKebabFarmingPool(address _kebabFarmingPool, uint256 _kebabFarmingPoolId, address _kebabFarmingPoolLpPairAddress, address _kebab) external onlyOperator {
-        kebabFarmingPool = _kebabFarmingPool;
-        kebabFarmingPoolId = _kebabFarmingPoolId;
-        kebabFarmingPoolLpPairAddress = _kebabFarmingPoolLpPairAddress;
-        kebab = _kebab;
+    function setVswapFarmingPool(IValueLiquidRouter _vswapRouter, address _vswapFarmingPool, uint256 _vswapFarmingPoolId, address _vswapFarmingPoolLpPairAddress, address _vbswap, address _vbswapToWbnbPair) external onlyOperator {
+        vswapRouter = _vswapRouter;
+        vswapFarmingPool = _vswapFarmingPool;
+        vswapFarmingPoolId = _vswapFarmingPoolId;
+        vswapFarmingPoolLpPairAddress = _vswapFarmingPoolLpPairAddress;
+        vbswap = _vbswap;
+        vbswapToWbnbPair = _vbswapToWbnbPair;
     }
 
     function setDollarOracle(address _dollarOracle) external onlyOperator {
@@ -276,8 +279,7 @@ contract CommunityFund {
             }
             uint256 _shareBal = IERC20(share).balanceOf(address(this));
             if (_shareBal > 0) {
-                IERC20(share).safeApprove(boardroom, 0);
-                IERC20(share).safeApprove(boardroom, _shareBal);
+                IERC20(share).safeIncreaseAllowance(boardroom, _shareBal);
                 IBoardroom(boardroom).stake(_shareBal);
             }
         }
@@ -307,7 +309,7 @@ contract CommunityFund {
                         if (_wbnbPercent >= expansionPercent[2]) {// enough WBNB: buy BUSD
                             _swapToken(dollar, busd, _sellingBdo);
                         } else {// short of WBNB
-                            uint256 _sellingBdoToBusd = _sellingBdo.div(2);
+                            uint256 _sellingBdoToBusd = _sellingBdo.mul(80).div(100); // 80% to BUSD
                             _swapToken(dollar, busd, _sellingBdoToBusd);
                             _swapToken(dollar, wbnb, _sellingBdo.sub(_sellingBdoToBusd));
                         }
@@ -371,7 +373,7 @@ contract CommunityFund {
         _sellingToken != bond && _sellingToken != share &&
         _sellingToken != busd && _sellingToken != wbnb, "core");
         uint256 _bal = IERC20(_sellingToken).balanceOf(address(this));
-        if (_bal > 0) {
+        if (_sellingToken != vbswap && _bal > 0) {
             _swapToken(_sellingToken, dollar, _bal);
         }
     }
@@ -388,8 +390,7 @@ contract CommunityFund {
             _path[0] = _inputToken;
             _path[1] = _outputToken;
         }
-        IERC20(_inputToken).safeApprove(address(pancakeRouter), 0);
-        IERC20(_inputToken).safeApprove(address(pancakeRouter), _amount);
+        IERC20(_inputToken).safeIncreaseAllowance(address(pancakeRouter), _amount);
         pancakeRouter.swapExactTokensForTokens(_amount, 1, _path, address(this), now.add(1800));
     }
 
@@ -403,18 +404,15 @@ contract CommunityFund {
         _removeLiquidity2(_lpAdd, dollar, _tokenB, _liquidity);
     }
 
-    function _addLiquidity2(address _tokenA, address _tokenB, uint256 _amountADesired, uint256 amountBDesired) internal {
-        IERC20(_tokenA).safeApprove(address(pancakeRouter), 0);
-        IERC20(_tokenA).safeApprove(address(pancakeRouter), type(uint256).max);
-        IERC20(_tokenB).safeApprove(address(pancakeRouter), 0);
-        IERC20(_tokenB).safeApprove(address(pancakeRouter), type(uint256).max);
+    function _addLiquidity2(address _tokenA, address _tokenB, uint256 _amountADesired, uint256 _amountBDesired) internal {
+        IERC20(_tokenA).safeIncreaseAllowance(address(pancakeRouter), _amountADesired);
+        IERC20(_tokenB).safeIncreaseAllowance(address(pancakeRouter), _amountBDesired);
         // addLiquidity(tokenA, tokenB, amountADesired, amountBDesired, amountAMin, amountBMin, to, deadline)
-        pancakeRouter.addLiquidity(_tokenA, _tokenB, _amountADesired, amountBDesired, 0, 0, address(this), now.add(1800));
+        pancakeRouter.addLiquidity(_tokenA, _tokenB, _amountADesired, _amountBDesired, 0, 0, address(this), now.add(1800));
     }
 
     function _removeLiquidity2(address _lpAdd, address _tokenA, address _tokenB, uint256 _liquidity) internal {
-        IERC20(_lpAdd).safeApprove(address(pancakeRouter), 0);
-        IERC20(_lpAdd).safeApprove(address(pancakeRouter), _liquidity);
+        IERC20(_lpAdd).safeIncreaseAllowance(address(pancakeRouter), _liquidity);
         // removeLiquidity(tokenA, tokenB, liquidity, amountAMin, amountBMin, to, deadline)
         pancakeRouter.removeLiquidity(_tokenA, _tokenB, _liquidity, 1, 1, address(this), now.add(1800));
     }
@@ -430,8 +428,7 @@ contract CommunityFund {
         require(_lpBal > 0, "!_lpBal");
         address _shareRewardPool = shareRewardPool;
         uint256 _pid = shareRewardPoolId[_tokenB];
-        IERC20(_lpAdd).safeApprove(_shareRewardPool, 0);
-        IERC20(_lpAdd).safeApprove(_shareRewardPool, _lpBal);
+        IERC20(_lpAdd).safeIncreaseAllowance(_shareRewardPool, _lpBal);
         IShareRewardPool(_shareRewardPool).deposit(_pid, _lpBal);
     }
 
@@ -490,8 +487,7 @@ contract CommunityFund {
         uint256 _lpBal = _after.sub(_before);
         require(_lpBal > 0, "!_lpBal");
         address _pancakeFarmingPool = pancakeFarmingPool;
-        IERC20(_lpAdd).safeApprove(_pancakeFarmingPool, 0);
-        IERC20(_lpAdd).safeApprove(_pancakeFarmingPool, _lpBal);
+        IERC20(_lpAdd).safeIncreaseAllowance(_pancakeFarmingPool, _lpBal);
         IPancakeswapPool(_pancakeFarmingPool).deposit(pancakeFarmingPoolId, _lpBal);
     }
 
@@ -529,8 +525,7 @@ contract CommunityFund {
         uint256 _lpBal = IERC20(_lpAdd).balanceOf(address(this));
         if (_lpBal > 0) {
             address _pancakeFarmingPool = pancakeFarmingPool;
-            IERC20(_lpAdd).safeApprove(_pancakeFarmingPool, 0);
-            IERC20(_lpAdd).safeApprove(_pancakeFarmingPool, _lpBal);
+            IERC20(_lpAdd).safeIncreaseAllowance(_pancakeFarmingPool, _lpBal);
             IPancakeswapPool(_pancakeFarmingPool).deposit(pancakeFarmingPoolId, _lpBal);
         }
     }
@@ -543,58 +538,66 @@ contract CommunityFund {
         (_stakedAmount, ) = IPancakeswapPool(pancakeFarmingPool).userInfo(pancakeFarmingPoolId, address(this));
     }
 
-    /* ========== FARM KEBAB POOL: STAKE BUSD/WBNB EARN KEBAB ========== */
+    /* ========== FARM VSWAP POOL: STAKE BUSD/WBNB EARN VBSWAP ========== */
 
-    function depositToKebabPool(uint256 _busdAmount, uint256 _wbnbAmount) external onlyStrategist {
-        address _lpAdd = kebabFarmingPoolLpPairAddress;
-        _addLiquidity2(busd, wbnb, _busdAmount, _wbnbAmount);
+    function depositToVswapPool(uint256 _busdAmount, uint256 _wbnbAmount) external onlyStrategist {
+        address _lpAdd = vswapFarmingPoolLpPairAddress;
+        _vswapAddLiquidity(_lpAdd, busd, wbnb, _busdAmount, _wbnbAmount);
         uint256 _lpBal = IERC20(_lpAdd).balanceOf(address(this));
         require(_lpBal > 0, "!_lpBal");
-        address _kebabFarmingPool = kebabFarmingPool;
-        IERC20(_lpAdd).safeApprove(_kebabFarmingPool, 0);
-        IERC20(_lpAdd).safeApprove(_kebabFarmingPool, _lpBal);
-        IPancakeswapPool(_kebabFarmingPool).deposit(kebabFarmingPoolId, _lpBal);
+        address _vswapFarmingPool = vswapFarmingPool;
+        IERC20(_lpAdd).safeIncreaseAllowance(_vswapFarmingPool, _lpBal);
+        IPancakeswapPool(_vswapFarmingPool).deposit(vswapFarmingPoolId, _lpBal);
     }
 
-    function withdrawFromKebabPool(uint256 _lpAmount) public onlyStrategist {
-        IPancakeswapPool(kebabFarmingPool).withdraw(kebabFarmingPoolId, _lpAmount);
-        _removeLiquidity2(kebabFarmingPoolLpPairAddress, busd, wbnb, _lpAmount);
+    function withdrawFromVswapPool(uint256 _lpAmount) public onlyStrategist {
+        IPancakeswapPool(vswapFarmingPool).withdraw(vswapFarmingPoolId, _lpAmount);
+        _vswapRemoveLiquidity(vswapFarmingPoolLpPairAddress, busd, wbnb, _lpAmount);
     }
 
-    function exitKebabPool() public onlyStrategist {
-        (uint256 _stakedAmount, ) = IPancakeswapPool(kebabFarmingPool).userInfo(kebabFarmingPoolId, address(this));
-        withdrawFromKebabPool(_stakedAmount);
-        uint256 _bal = IERC20(kebab).balanceOf(address(this));
-        if (_bal > 0) {
-            trimNonCoreToken(kebab);
-        }
+    function exitVswapPool() public onlyStrategist {
+        (uint256 _stakedAmount, ) = IPancakeswapPool(vswapFarmingPool).userInfo(vswapFarmingPoolId, address(this));
+        withdrawFromVswapPool(_stakedAmount);
     }
 
-    function claimAndReinvestFromKebabPool() public {
-        IPancakeswapPool(kebabFarmingPool).withdraw(kebabFarmingPoolId, 0);
-        uint256 _kebabBal = IERC20(kebab).balanceOf(address(this));
-        if (_kebabBal > 0) {
+    function claimAndBuyBackBDOFromVswapPool() public {
+        IPancakeswapPool(vswapFarmingPool).withdraw(vswapFarmingPoolId, 0);
+        uint256 _vbswapBal = IERC20(vbswap).balanceOf(address(this));
+        if (_vbswapBal > 0) {
             uint256 _wbnbBef = IERC20(wbnb).balanceOf(address(this));
-            _swapToken(kebab, wbnb, _kebabBal);
+            _vswapSwapToken(vbswapToWbnbPair, vbswap, wbnb, _vbswapBal);
             uint256 _wbnbAft = IERC20(wbnb).balanceOf(address(this));
             uint256 _boughtWbnb = _wbnbAft.sub(_wbnbBef);
             if (_boughtWbnb >= 2) {
-                uint256 _dollarBef = IERC20(dollar).balanceOf(address(this));
-                _swapToken(wbnb, dollar, _boughtWbnb.div(2));
-                uint256 _dollarAft = IERC20(dollar).balanceOf(address(this));
-                uint256 _boughtDollar = _dollarAft.sub(_dollarBef);
-                _addLiquidity(wbnb, _boughtDollar);
-                claimAndReinvestFromPancakePool();
+                _swapToken(wbnb, dollar, _boughtWbnb);
             }
         }
     }
 
-    function pendingFromKebabPool() public view returns(uint256) {
-        return IPancakeswapPool(kebabFarmingPool).pendingCake(kebabFarmingPoolId, address(this));
+    function pendingFromVswapPool() public view returns(uint256) {
+        return IPancakeswapPool(vswapFarmingPool).pendingReward(vswapFarmingPoolId, address(this));
     }
 
-    function stakeAmountFromKebabPool() public view returns(uint256 _stakedAmount) {
-        (_stakedAmount, ) = IPancakeswapPool(kebabFarmingPool).userInfo(kebabFarmingPoolId, address(this));
+    function stakeAmountFromVswapPool() public view returns(uint256 _stakedAmount) {
+        (_stakedAmount, ) = IPancakeswapPool(vswapFarmingPool).userInfo(vswapFarmingPoolId, address(this));
+    }
+
+    function _vswapSwapToken(address _pair, address _inputToken, address _outputToken, uint256 _amount) internal {
+        IERC20(_inputToken).safeIncreaseAllowance(address(vswapRouter), _amount);
+        address[] memory _paths = new address[](1);
+        _paths[0] = _pair;
+        vswapRouter.swapExactTokensForTokens(_inputToken, _outputToken, _amount, 1, _paths, address(this), now.add(1800));
+    }
+
+    function _vswapAddLiquidity(address _pair, address _tokenA, address _tokenB, uint256 _amountADesired, uint256 _amountBDesired) internal {
+        IERC20(_tokenA).safeIncreaseAllowance(address(vswapRouter), _amountADesired);
+        IERC20(_tokenB).safeIncreaseAllowance(address(vswapRouter), _amountBDesired);
+        vswapRouter.addLiquidity(_pair, _tokenA, _tokenB, _amountADesired, _amountBDesired, 0, 0, address(this), now.add(1800));
+    }
+
+    function _vswapRemoveLiquidity(address _pair, address _tokenA, address _tokenB, uint256 _liquidity) internal {
+        IERC20(_pair).safeIncreaseAllowance(address(vswapRouter), _liquidity);
+        vswapRouter.removeLiquidity(_pair, _tokenA, _tokenB, _liquidity, 1, 1, address(this), now.add(1800));
     }
 
     /* ========== EMERGENCY ========== */

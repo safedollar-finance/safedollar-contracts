@@ -59,10 +59,16 @@ contract MockBoardroom is IBoardroom, Operator {
 
     /* ========== MUTATIVE FUNCTIONS ========== */
 
-    function allocateSeigniorage(uint256 amount) external override onlyOperator {
-        require(amount > 0, "Boardroom: Cannot allocate 0");
-        dollar.safeTransferFrom(msg.sender, address(this), amount);
-        emit RewardAdded(msg.sender, amount);
+    function allocateSeigniorage(uint256 _amount) external override onlyOperator {
+        require(_amount > 0, "Boardroom: Cannot allocate 0");
+        dollar.safeTransferFrom(msg.sender, address(this), _amount);
+        emit RewardAdded(msg.sender, _amount);
+    }
+
+    function allocateSeignioragePegToken(address _token, uint256 _amount) external override onlyOperator {
+        require(_amount > 0, "Boardroom: Cannot allocate 0");
+        IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
+        emit PegTokenRewardAdded(_token, msg.sender, _amount);
     }
 
     function stake(uint256 _amount) external override {
@@ -90,10 +96,17 @@ contract MockBoardroom is IBoardroom, Operator {
     function setLockUp(uint256 _withdrawLockupEpochs, uint256 _rewardLockupEpochs) external override onlyOperator {
     }
 
+    function addPegToken(address _token, address _room) external override onlyOperator {
+    }
+
+    function setBpTokenBoardroom(address _token, address _room) external override onlyOperator {
+    }
+
     function governanceRecoverUnsupported(address _token, uint256 _amount, address _to) external override onlyOperator {
     }
 
     /* ========== EVENTS ========== */
 
     event RewardAdded(address indexed user, uint256 reward);
+    event PegTokenRewardAdded(address indexed pegToken, address indexed user, uint256 reward);
 }

@@ -6,40 +6,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 import "./utils/ContractGuard.sol";
+import "./utils/ShareWrapper.sol";
 import "./interfaces/IBasisAsset.sol";
 import "./interfaces/ITreasury.sol";
-
-contract ShareWrapper {
-    using SafeMath for uint256;
-    using SafeERC20 for IERC20;
-
-    IERC20 public share;
-
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
-
-    function totalSupply() public view returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) public view returns (uint256) {
-        return _balances[account];
-    }
-
-    function stake(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-        share.safeTransferFrom(msg.sender, address(this), amount);
-    }
-
-    function withdraw(uint256 amount) public virtual {
-        uint256 directorShare = _balances[msg.sender];
-        require(directorShare >= amount, "Boardroom: withdraw request greater than staked amount");
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = directorShare.sub(amount);
-        share.safeTransfer(msg.sender, amount);
-    }
-}
+import "./interfaces/IbpTokenBoardroom.sol";
 
 contract Boardroom is ShareWrapper, ContractGuard {
     using SafeERC20 for IERC20;
@@ -78,6 +48,10 @@ contract Boardroom is ShareWrapper, ContractGuard {
     uint256 public withdrawLockupEpochs;
     uint256 public rewardLockupEpochs;
 
+    /* =================== Added variables (need to keep orders for proxy to work) =================== */
+    address[] public pegTokens;
+    mapping(address => address) public bpTokenBoardrooms; // pegToken => its boardroom
+
     /* ========== EVENTS ========== */
 
     event Initialized(address indexed executor, uint256 at);
@@ -94,16 +68,22 @@ contract Boardroom is ShareWrapper, ContractGuard {
     }
 
     modifier directorExists {
-        require(balanceOf(msg.sender) > 0, "Boardroom: The director does not exist");
+        require(balanceOf(msg.sender) > 0, "Boardroom: The _director does not exist");
         _;
     }
 
-    modifier updateReward(address director) {
-        if (director != address(0)) {
-            Boardseat memory seat = directors[director];
-            seat.rewardEarned = earned(director);
+    modifier updateReward(address _director) {
+        if (_director != address(0)) {
+            Boardseat memory seat = directors[_director];
+            seat.rewardEarned = earned(_director);
             seat.lastSnapshotIndex = latestSnapshotIndex();
-            directors[director] = seat;
+            directors[_director] = seat;
+        }
+        uint256 _ptlength = pegTokens.length;
+        for (uint256 _pti = 0; _pti < _ptlength; ++_pti) {
+            address _token = pegTokens[_pti];
+            address _bpTokenBoardroom = bpTokenBoardrooms[_token];
+            IbpTokenBoardroom(_bpTokenBoardroom).updateReward(_token, msg.sender);
         }
         _;
     }
@@ -145,6 +125,20 @@ contract Boardroom is ShareWrapper, ContractGuard {
         rewardLockupEpochs = _rewardLockupEpochs;
     }
 
+    function addPegToken(address _token, address _room) external onlyOperator {
+        require(IERC20(_token).totalSupply() > 0, "Boardroom: invalid token");
+        uint256 _ptlength = pegTokens.length;
+        for (uint256 _pti = 0; _pti < _ptlength; ++_pti) {
+            require(pegTokens[_pti] != _token, "Boardroom: existing token");
+        }
+        pegTokens.push(_token);
+        bpTokenBoardrooms[_token] = _room;
+    }
+
+    function setBpTokenBoardroom(address _token, address _room) external onlyOperator {
+        bpTokenBoardrooms[_token] = _room;
+    }
+
     /* ========== VIEW FUNCTIONS ========== */
 
     // =========== Snapshot getters
@@ -157,20 +151,20 @@ contract Boardroom is ShareWrapper, ContractGuard {
         return boardHistory[latestSnapshotIndex()];
     }
 
-    function getLastSnapshotIndexOf(address director) public view returns (uint256) {
-        return directors[director].lastSnapshotIndex;
+    function getLastSnapshotIndexOf(address _director) public view returns (uint256) {
+        return directors[_director].lastSnapshotIndex;
     }
 
-    function getLastSnapshotOf(address director) internal view returns (BoardSnapshot memory) {
-        return boardHistory[getLastSnapshotIndexOf(director)];
+    function getLastSnapshotOf(address _director) internal view returns (BoardSnapshot memory) {
+        return boardHistory[getLastSnapshotIndexOf(_director)];
     }
 
-    function canWithdraw(address director) external view returns (bool) {
-        return directors[director].epochTimerStart.add(withdrawLockupEpochs) <= treasury.epoch();
+    function canWithdraw(address _director) external view returns (bool) {
+        return directors[_director].epochTimerStart.add(withdrawLockupEpochs) <= treasury.epoch();
     }
 
-    function canClaimReward(address director) external view returns (bool) {
-        return directors[director].epochTimerStart.add(rewardLockupEpochs) <= treasury.epoch();
+    function canClaimReward(address _director) external view returns (bool) {
+        return directors[_director].epochTimerStart.add(rewardLockupEpochs) <= treasury.epoch();
     }
 
     function epoch() external view returns (uint256) {
@@ -191,11 +185,15 @@ contract Boardroom is ShareWrapper, ContractGuard {
         return getLatestSnapshot().rewardPerShare;
     }
 
-    function earned(address director) public view returns (uint256) {
+    function earned(address _director) public view returns (uint256) {
         uint256 latestRPS = getLatestSnapshot().rewardPerShare;
-        uint256 storedRPS = getLastSnapshotOf(director).rewardPerShare;
+        uint256 storedRPS = getLastSnapshotOf(_director).rewardPerShare;
 
-        return balanceOf(director).mul(latestRPS.sub(storedRPS)).div(1e18).add(directors[director].rewardEarned);
+        return balanceOf(_director).mul(latestRPS.sub(storedRPS)).div(1e18).add(directors[_director].rewardEarned);
+    }
+
+    function earnedPegToken(address _token, address _director) external view returns (uint256) {
+        return IbpTokenBoardroom(bpTokenBoardrooms[_token]).earned(_token, _director);
     }
 
     /* ========== MUTATIVE FUNCTIONS ========== */
@@ -228,25 +226,41 @@ contract Boardroom is ShareWrapper, ContractGuard {
             dollar.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
+        uint256 _ptlength = pegTokens.length;
+        for (uint256 _pti = 0; _pti < _ptlength; ++_pti) {
+            address _token = pegTokens[_pti];
+            address _bpTokenBoardroom = bpTokenBoardrooms[_token];
+            IbpTokenBoardroom(_bpTokenBoardroom).claimReward(_token, msg.sender);
+        }
     }
 
-    function allocateSeigniorage(uint256 amount) external onlyOneBlock onlyOperator {
-        require(amount > 0, "Boardroom: Cannot allocate 0");
-        require(totalSupply() > 0, "Boardroom: Cannot allocate when totalSupply is 0");
+    function allocateSeigniorage(uint256 _amount) external onlyOneBlock onlyOperator {
+        require(_amount > 0, "Boardroom: Cannot allocate 0");
+        uint256 _totalSupply = totalSupply();
+        require(_totalSupply > 0, "Boardroom: Cannot allocate when totalSupply is 0");
 
         // Create & add new snapshot
         uint256 prevRPS = getLatestSnapshot().rewardPerShare;
-        uint256 nextRPS = prevRPS.add(amount.mul(1e18).div(totalSupply()));
+        uint256 nextRPS = prevRPS.add(_amount.mul(1e18).div(_totalSupply));
 
         BoardSnapshot memory newSnapshot = BoardSnapshot({
             time: block.number,
-            rewardReceived: amount,
+            rewardReceived: _amount,
             rewardPerShare: nextRPS
         });
         boardHistory.push(newSnapshot);
 
-        dollar.safeTransferFrom(msg.sender, address(this), amount);
-        emit RewardAdded(msg.sender, amount);
+        dollar.safeTransferFrom(msg.sender, address(this), _amount);
+        emit RewardAdded(msg.sender, _amount);
+    }
+
+    function allocateSeignioragePegToken(address _token, uint256 _amount) external onlyOperator {
+        address _bpTokenBoardroom = bpTokenBoardrooms[_token];
+        if (_bpTokenBoardroom != address(0)) {
+            IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
+            IERC20(_token).safeIncreaseAllowance(_bpTokenBoardroom, _amount);
+            IbpTokenBoardroom(_bpTokenBoardroom).allocateSeignioragePegToken(_token, _amount);
+        }
     }
 
     function governanceRecoverUnsupported(IERC20 _token, uint256 _amount, address _to) external onlyOperator {

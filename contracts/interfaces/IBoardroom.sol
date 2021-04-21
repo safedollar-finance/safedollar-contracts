@@ -21,6 +21,10 @@ interface IBoardroom {
 
     function setLockUp(uint256 _withdrawLockupEpochs, uint256 _rewardLockupEpochs) external;
 
+    function addPegToken(address _token, address _room) external;
+
+    function setBpTokenBoardroom(address _token, address _room) external;
+
     function stake(uint256 _amount) external;
 
     function withdraw(uint256 _amount) external;
@@ -30,6 +34,8 @@ interface IBoardroom {
     function claimReward() external;
 
     function allocateSeigniorage(uint256 _amount) external;
+
+    function allocateSeignioragePegToken(address _token, uint256 _amount) external;
 
     function governanceRecoverUnsupported(address _token, uint256 _amount, address _to) external;
 }
