@@ -5,7 +5,7 @@ import {Contract, ContractFactory, BigNumber, utils} from 'ethers';
 import {Provider} from '@ethersproject/providers';
 import {SignerWithAddress} from '@nomiclabs/hardhat-ethers/dist/src/signer-with-address';
 
-import { advanceBlock, advanceTimeAndBlock } from './shared/utilities';
+import { mineBlock, mineBlockTimeStamp, mineOneBlock } from "./shared/utilities";
 
 chai.use(solidity);
 
@@ -127,7 +127,7 @@ describe('BdoRewardPool.test', () => {
         });
 
         it('pendingBDO()', async () => {
-            await advanceBlock(provider);
+            await mineOneBlock(provider);
             expect(await pool.pendingBDO(0, bob.address)).to.eq(utils.parseEther('0.6253006253006253'));
             expect(await pool.pendingBDO(2, bob.address)).to.eq(utils.parseEther('0'));
             expect(await pool.pendingBDO(0, carol.address)).to.eq(utils.parseEther('0.673400673400673400'));
@@ -138,7 +138,7 @@ describe('BdoRewardPool.test', () => {
         });
 
         it('carol withdraw 20 DAI', async () => {
-            await advanceBlock(provider);
+            await mineOneBlock(provider);
             await expect(pool.connect(carol).withdraw(0, utils.parseEther('20.01'))).to.revertedWith('withdraw: not good');
             let _beforeDAI = await dai.balanceOf(carol.address);
             await expect(async () => {

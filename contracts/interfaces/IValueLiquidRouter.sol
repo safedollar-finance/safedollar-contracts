@@ -13,6 +13,16 @@ interface IValueLiquidRouter {
         uint256 deadline
     ) external returns (uint256[] memory amounts);
 
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        address tokenIn,
+        address tokenOut,
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+
     function addLiquidity(
         address pair,
         address tokenA,

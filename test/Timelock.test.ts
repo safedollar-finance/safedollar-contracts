@@ -4,7 +4,7 @@ import { solidity } from 'ethereum-waffle';
 import { Contract, ContractFactory, BigNumber, utils } from 'ethers';
 import { Provider } from '@ethersproject/providers';
 
-import { advanceTimeAndBlock } from './shared/utilities';
+import { mineBlockTimeStamp } from './shared/utilities';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/dist/src/signer-with-address';
 import { ParamType } from 'ethers/lib/utils';
 
@@ -117,7 +117,7 @@ describe('Timelock', () => {
         .to.emit(timelock, 'QueueTransaction')
         .withArgs(txHash, ...calldata);
 
-      await advanceTimeAndBlock(
+      await mineBlockTimeStamp(
         provider,
         eta - (await latestBlocktime(provider))
       );
@@ -164,7 +164,7 @@ describe('Timelock', () => {
         .to.emit(timelock, 'QueueTransaction')
         .withArgs(txHash, ...calldata);
 
-      await advanceTimeAndBlock(
+      await mineBlockTimeStamp(
         provider,
         eta - (await latestBlocktime(provider))
       );
@@ -183,7 +183,7 @@ describe('Timelock', () => {
 
       expect(await latestBlocktime(provider)).to.lt(startTime);
 
-      await advanceTimeAndBlock(
+      await mineBlockTimeStamp(
         provider,
         startTime - (await latestBlocktime(provider))
       );

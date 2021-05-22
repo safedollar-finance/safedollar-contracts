@@ -1,3 +1,4 @@
+// @ts-ignore
 import chai, {expect} from "chai";
 import {ethers} from "hardhat";
 import {solidity} from "ethereum-waffle";
@@ -5,7 +6,7 @@ import {Contract, ContractFactory, BigNumber, utils} from "ethers";
 import {Provider} from "@ethersproject/providers";
 import {SignerWithAddress} from "@nomiclabs/hardhat-ethers/dist/src/signer-with-address";
 
-import {advanceTimeAndBlock} from "./shared/utilities";
+import {mineBlockTimeStamp, toWei} from "./shared/utilities";
 
 chai.use(solidity);
 
@@ -206,7 +207,7 @@ describe("Treasury", () => {
             describe("after startTime", () => {
                 beforeEach("advance blocktime", async () => {
                     // wait til first epoch
-                    await advanceTimeAndBlock(provider, startTime.sub(await latestBlocktime(provider)).toNumber());
+                    await mineBlockTimeStamp(provider, startTime.sub(await latestBlocktime(provider)).toNumber());
                 });
 
                 it("should funded to boardroom even when seigniorageSaved below depletion floor (BDOIP01)", async () => {
@@ -245,26 +246,48 @@ describe("Treasury", () => {
                     expect(await dollar.balanceOf(boardroom.address)).to.eq(expectedSeigniorage);
                 });
 
-                it("should funded to boardroom when seigniorageSaved over depletion floor and has daoFundSharedPercent", async () => {
-                    await treasury.connect(operator).setBondDepletionFloorPercent(500);
-                    await treasury.connect(operator).setDaoFund(rewardPool.address);
-                    await treasury.connect(operator).setDaoFundSharedPercent(1000); // 10%
-                    const dollarPrice = ETH.mul(106).div(100);
+                // it("should funded to boardroom when seigniorageSaved over depletion floor and has daoFundSharedPercent", async () => {
+                //     await treasury.connect(operator).setBondDepletionFloorPercent(500);
+                //     await treasury.connect(operator).setDaoFund(rewardPool.address);
+                //     await treasury.connect(operator).setDaoFundSharedPercent(1000); // 10%
+                //     const dollarPrice = ETH.mul(106).div(100);
+                //     await oracle.setPrice(dollarPrice);
+                //
+                //     const treasuryReserve = await treasury.getReserve();
+                //     const dollarSupply = (await dollar.totalSupply()).sub(treasuryReserve);
+                //     const expectedSeigniorage = dollarSupply.mul(45).div(1000).mul(90).div(100);
+                //
+                //     await expect(treasury.allocateSeigniorage())
+                //       .to.emit(treasury, 'BoardroomFunded')
+                //       .withArgs(await latestBlocktime(provider), expectedSeigniorage)
+                //       .to.emit(treasury, 'DaoFundFunded')
+                //       .withArgs(await latestBlocktime(provider), expectedSeigniorage.div(9))
+                //       .to.emit(boardroom, 'RewardAdded')
+                //       .withArgs(treasury.address, expectedSeigniorage);
+                //
+                //     expect(await dollar.balanceOf(boardroom.address)).to.eq(expectedSeigniorage);
+                // });
+
+                it("should funded to boardroom during contraction with external reward", async () => {
+                    await treasury.connect(operator).setExternalRewardSharedPercent(1000);
+
+                    await treasury.connect(operator).setBDOIP01(0, 100);
+                    const dollarPrice = ETH.mul(99).div(100); // $0.99
                     await oracle.setPrice(dollarPrice);
 
-                    const treasuryReserve = await treasury.getReserve();
-                    const dollarSupply = (await dollar.totalSupply()).sub(treasuryReserve);
-                    const expectedSeigniorage = dollarSupply.mul(45).div(1000).mul(90).div(100);
+                    await dollar.connect(operator).approve(treasury.address, utils.parseEther("100"));
+                    await treasury.connect(operator).notifyExternalReward(utils.parseEther("100"));
+
+                    expect(await dollar.balanceOf(treasury.address)).to.eq(utils.parseEther("60100"));
+                    expect(await treasury.externalRewardAmount()).to.eq(utils.parseEther("100"));
+                    expect(await treasury.getBoardroomContractionReward()).to.eq(utils.parseEther("10"));
 
                     await expect(treasury.allocateSeigniorage())
                       .to.emit(treasury, 'BoardroomFunded')
-                      .withArgs(await latestBlocktime(provider), expectedSeigniorage)
-                      .to.emit(treasury, 'DaoFundFunded')
-                      .withArgs(await latestBlocktime(provider), expectedSeigniorage.div(9))
-                      .to.emit(boardroom, 'RewardAdded')
-                      .withArgs(treasury.address, expectedSeigniorage);
+                      .withArgs(await latestBlocktime(provider), utils.parseEther("10"));
 
-                    expect(await dollar.balanceOf(boardroom.address)).to.eq(expectedSeigniorage);
+                    expect(await dollar.balanceOf(treasury.address)).to.eq(utils.parseEther("60090"));
+                    expect(await treasury.externalRewardAmount()).to.eq(utils.parseEther("90"));
                 });
 
                 it("should funded even fails to call update function in oracle", async () => {
@@ -347,7 +370,7 @@ describe("Treasury", () => {
         describe("after startTime", () => {
             beforeEach("advance blocktime", async () => {
                 // wait til first epoch
-                await advanceTimeAndBlock(provider, startTime.sub(await latestBlocktime(provider)).toNumber());
+                await mineBlockTimeStamp(provider, startTime.sub(await latestBlocktime(provider)).toNumber());
             });
 
             describe("#buyBonds", () => {
@@ -362,6 +385,26 @@ describe("Treasury", () => {
 
                     console.log('epochSupplyContractionLeft = %s', String(await treasury.epochSupplyContractionLeft()));
                     await expect(treasury.connect(ant).buyBonds(ETH, dollarPrice)).to.emit(treasury, "BoughtBonds").withArgs(ant.address, ETH, utils.parseEther('1.00505050505050505'));
+
+                    expect(await dollar.balanceOf(ant.address)).to.eq(ZERO);
+                    expect(await bond.balanceOf(ant.address)).to.eq(ETH.add(ETH.mul(ETH).div(dollarPrice).sub(ETH).div(2)));
+                });
+
+                it("should work if dollar price below $1 and we give 5% to Boardroom", async () => {
+                    await treasury.connect(operator).setIncentiveByBondPurchasePercent(500);
+                    await treasury.connect(operator).setBDOIP01(0, 100);
+                    const dollarPrice = ETH.mul(99).div(100); // $0.99
+                    await oracle.setPrice(dollarPrice);
+                    await treasury.allocateSeigniorage();
+
+                    await dollar.connect(operator).transfer(ant.address, ETH);
+                    await dollar.connect(ant).approve(treasury.address, ETH);
+
+                    console.log('incentiveByBondPurchaseAmount = %s', String(await treasury.incentiveByBondPurchaseAmount()));
+                    console.log('getBoardroomContractionReward = %s', String(await treasury.getBoardroomContractionReward()));
+                    await expect(treasury.connect(ant).buyBonds(ETH, dollarPrice)).to.emit(treasury, "BoughtBonds").withArgs(ant.address, utils.parseEther('0.95'), utils.parseEther('1.00505050505050505'));
+                    console.log("incentiveByBondPurchaseAmount = %s", String(await treasury.incentiveByBondPurchaseAmount()));
+                    console.log("getBoardroomContractionReward = %s", String(await treasury.getBoardroomContractionReward()));
 
                     expect(await dollar.balanceOf(ant.address)).to.eq(ZERO);
                     expect(await bond.balanceOf(ant.address)).to.eq(ETH.add(ETH.mul(ETH).div(dollarPrice).sub(ETH).div(2)));
@@ -392,6 +435,7 @@ describe("Treasury", () => {
                     await expect(treasury.connect(ant).buyBonds(ZERO, dollarPrice)).to.revertedWith("Treasury: cannot purchase bonds with zero amount");
                 });
             });
+
             describe("#redeemBonds", () => {
                 beforeEach("initialize treasury", async () => {
                     // await treasury.connect(operator).initialize(dollar.address, bond.address, share.address, startTime);
@@ -468,6 +512,20 @@ describe("Treasury", () => {
                     await bond.connect(ant).approve(treasury.address, redeemAmount);
 
                     await expect(treasury.connect(ant).redeemBonds(redeemAmount, dollarPrice)).to.revertedWith("Treasury: treasury has no more budget");
+                });
+
+                it("should work if dollar price is below $1 but we allow redeem with penalty", async () => {
+                    await treasury.connect(operator).setContractionBondRedeemPenaltyPercent(1000); // 10%
+
+                    const dollarPrice = ETH.mul(99).div(100);
+                    await oracle.setPrice(dollarPrice);
+
+                    await bond.connect(operator).transfer(ant.address, ETH);
+                    await bond.connect(ant).approve(treasury.address, ETH);
+                    await expect(treasury.connect(ant).redeemBonds(ETH, dollarPrice)).to.emit(treasury, "RedeemedBonds").withArgs(ant.address, utils.parseEther('0.9'), ETH);
+
+                    expect(await bond.balanceOf(ant.address)).to.eq(ZERO); // 1:0.9
+                    expect(await dollar.balanceOf(ant.address)).to.eq(utils.parseEther('0.9'));
                 });
             });
         });

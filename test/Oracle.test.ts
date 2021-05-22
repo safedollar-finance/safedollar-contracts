@@ -8,7 +8,7 @@ import UniswapV2Router from '@uniswap/v2-periphery/build/UniswapV2Router02.json'
 import {SignerWithAddress} from '@nomiclabs/hardhat-ethers/dist/src/signer-with-address';
 import {Provider} from '@ethersproject/providers';
 
-import {advanceTimeAndBlock} from './shared/utilities';
+import {mineBlockTimeStamp} from './shared/utilities';
 
 chai.use(solidity);
 
@@ -92,14 +92,14 @@ describe('Oracle', () => {
 
     describe('#update', async () => {
         it('should works correctly', async () => {
-            await advanceTimeAndBlock(provider, oracleStartTime.sub(await latestBlocktime(provider)).toNumber() - MINUTE);
+            await mineBlockTimeStamp(provider, oracleStartTime.sub(await latestBlocktime(provider)).toNumber() - MINUTE);
 
             // epoch 0
             await expect(oracle.connect(whale).update()).to.revertedWith('Epoch: only operator allowed for pre-epoch');
             expect(await oracle.nextEpochPoint()).to.eq(oracleStartTime);
             expect(await oracle.getCurrentEpoch()).to.eq(BigNumber.from(0));
 
-            await advanceTimeAndBlock(provider, 2 * MINUTE);
+            await mineBlockTimeStamp(provider, 2 * MINUTE);
 
             // epoch 1
             await expect(oracle.connect(whale).update()).to.emit(oracle, 'Updated');
